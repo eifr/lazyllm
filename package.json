@@ -1,0 +1,29 @@
+{
+  "name": "lazyllm",
+  "version": "0.1.0",
+  "description": "A Terminal User Interface (TUI) for managing local large language models using Ollama",
+  "main": "bin/lazyllm.js",
+  "bin": {
+    "lazyllm": "bin/lazyllm.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eifr/lazyllm.git"
+  },
+  "keywords": [
+    "llm",
+    "cli",
+    "ollama",
+    "tui",
+    "terminal"
+  ],
+  "author": "eifr",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/eifr/lazyllm/issues"
+  },
+  "homepage": "https://github.com/eifr/lazyllm#readme"
+}

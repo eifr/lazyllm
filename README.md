@@ -16,6 +16,14 @@ A Terminal User Interface (TUI) for managing local large language models using [
 
 ## Installation
 
+### Using npx (Recommended)
+You can run LazyLLM instantly without installing anything if you have Node.js installed:
+
+```bash
+npx lazyllm
+```
+
+### Manual Installation
 Ensure you have Go installed, then clone and build the project:
 
 ```bash
@@ -66,3 +74,11 @@ export LAZYLLM_CHAT_CMD="ollama run {model}" # This is the default
 *   [Bubbles](https://github.com/charmbracelet/bubbles) - UI components for Bubble Tea.
 *   [Lip Gloss](https://github.com/charmbracelet/lipgloss) - Style definitions for nice terminal layouts.
 *   [goquery](https://github.com/PuerkitoBio/goquery) - Used for scraping the Ollama registry.
+
+## Releasing a new version
+
+1. Update the `version` in `package.json` (e.g. `"0.1.0"` -> `"0.1.1"`).
+2. Commit your changes: `git commit -am "chore: bump version to 0.1.1"`
+3. Tag the release: `git tag v0.1.1`
+4. Push the tag to trigger GitHub Actions (which compiles the binaries): `git push origin v0.1.1`
+5. Publish to npm: `npm publish`
