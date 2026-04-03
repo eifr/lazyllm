@@ -74,10 +74,7 @@ func (c *OllamaClient) Unload(name string) error {
 	return c.client.Generate(ctx, req, fn)
 }
 
-func (c *OllamaClient) Pull(name string, insecure bool, progressFn func(api.ProgressResponse) error) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+func (c *OllamaClient) Pull(ctx context.Context, name string, insecure bool, progressFn func(api.ProgressResponse) error) error {
 	req := &api.PullRequest{
 		Name:     name,
 		Insecure: insecure,

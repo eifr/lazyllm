@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -70,7 +71,14 @@ type pullProgressMsg pullResponse
 
 func waitForProgress(sub chan pullResponse) tea.Cmd {
 	return func() tea.Msg {
-		return pullProgressMsg(<-sub)
+		if sub == nil {
+			return nil
+		}
+		resp, ok := <-sub
+		if !ok {
+			return nil
+		}
+		return pullProgressMsg(resp)
 	}
 }
 
@@ -109,6 +117,7 @@ type registryScrapeMsg struct {
 
 type registryProgressMsg struct {
 	status string
+	ch     chan string
 }
 
 type appModel struct {
@@ -126,6 +135,7 @@ type appModel struct {
 	pullChan        chan pullResponse
 	pullCompleted   int64
 	pullTotal       int64
+	pullCancel      context.CancelFunc
 	chatCmdTemplate string
 }
 
@@ -312,6 +322,14 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case registryProgressMsg:
 		m.registryList.Title = msg.status
+		cmds = append(cmds, func() tea.Msg {
+			status, ok := <-msg.ch
+			if !ok {
+				return nil
+			}
+			return registryProgressMsg{status: status, ch: msg.ch}
+		})
+		return m, tea.Batch(cmds...)
 
 	case ollamaInstalledMsg:
 		m.state = stateOllamaNotRunning
@@ -331,9 +349,17 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pullProgressMsg:
 		if msg.err != nil {
 			m.state = stateBrowsing
-			m.logs = append(m.logs, logMsg{text: msg.err.Error(), level: "error"})
+			if msg.err != context.Canceled {
+				m.logs = append(m.logs, logMsg{text: msg.err.Error(), level: "error"})
+			} else {
+				m.logs = append(m.logs, logMsg{text: "Pull cancelled", level: "info"})
+			}
 			m.input.SetValue("")
 			m.pullChan = nil
+			if m.pullCancel != nil {
+				m.pullCancel()
+				m.pullCancel = nil
+			}
 			cmds = append(cmds, m.loadModels())
 			return m, tea.Batch(cmds...)
 		}
@@ -342,6 +368,10 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logs = append(m.logs, logMsg{text: "Pull completed", level: "success"})
 			m.input.SetValue("")
 			m.pullChan = nil
+			if m.pullCancel != nil {
+				m.pullCancel()
+				m.pullCancel = nil
+			}
 			cmds = append(cmds, m.loadModels())
 			return m, tea.Batch(cmds...)
 		}
@@ -354,7 +384,9 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
-		cmds = append(cmds, waitForProgress(m.pullChan))
+		if m.pullChan != nil {
+			cmds = append(cmds, waitForProgress(m.pullChan))
+		}
 		return m, tea.Batch(cmds...)
 
 	case pullCompleteMsg:
@@ -440,6 +472,74 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
+		if m.state == statePulling {
+			switch msg.Type {
+			case tea.KeyEnter:
+				if m.pullChan != nil {
+					return m, nil // Ignore enter if already pulling
+				}
+
+				inputVal := strings.TrimSpace(m.input.Value())
+				insecure := false
+				modelName := inputVal
+
+				if strings.HasSuffix(inputVal, "--insecure") {
+					insecure = true
+					modelName = strings.TrimSpace(strings.TrimSuffix(inputVal, "--insecure"))
+				}
+
+				m.logs = append(m.logs, logMsg{text: fmt.Sprintf("Pulling %s (insecure: %v)...", modelName, insecure), level: "info"})
+
+				m.pullChan = make(chan pullResponse, 100) // Buffer it to prevent strict blocking
+				m.pullStatus = "Starting pull..."
+				m.pullCompleted = 0
+				m.pullTotal = 0
+
+				ctx, cancel := context.WithCancel(context.Background())
+				m.pullCancel = cancel
+
+				pullCh := m.pullChan
+				go func() {
+					err := m.client.Pull(ctx, modelName, insecure, func(resp api.ProgressResponse) error {
+						// Don't block if the UI is slow/cancelled
+						select {
+						case pullCh <- pullResponse{progress: resp}:
+						case <-ctx.Done():
+							return ctx.Err()
+						default:
+						}
+						return nil
+					})
+
+					select {
+					case <-ctx.Done():
+					case pullCh <- pullResponse{err: err, done: err == nil}:
+					default:
+					}
+				}()
+
+				return m, waitForProgress(m.pullChan)
+
+			case tea.KeyEsc, tea.KeyCtrlC:
+				if m.pullCancel != nil {
+					m.pullCancel()
+					m.pullCancel = nil
+				}
+				if m.pullChan != nil {
+					m.pullChan = nil
+				}
+				m.state = stateBrowsing
+				m.input.SetValue("")
+				return m, nil
+			}
+
+			if m.pullChan == nil {
+				m.input, cmd = m.input.Update(msg)
+				cmds = append(cmds, cmd)
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		if m.state == stateBrowsing {
 			switch msg.String() {
 			case "q", "ctrl+c":
@@ -465,19 +565,18 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.registryList.Title = "Gathering available models..."
 					progressChan := make(chan string)
 
-					// Cmd to listen for progress updates
-					var waitForProgress func() tea.Cmd
-					waitForProgress = func() tea.Cmd {
+					var waitForProgress func(ch chan string) tea.Cmd
+					waitForProgress = func(ch chan string) tea.Cmd {
 						return func() tea.Msg {
-							status, ok := <-progressChan
+							status, ok := <-ch
 							if !ok {
 								return nil
 							}
-							return registryProgressMsg{status: status}
+							return registryProgressMsg{status: status, ch: ch}
 						}
 					}
 					// Start polling the channel
-					cmds = append(cmds, waitForProgress())
+					cmds = append(cmds, waitForProgress(progressChan))
 
 					// Start the actual background scrape
 					cmds = append(cmds, func() tea.Msg {
