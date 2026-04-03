@@ -2,6 +2,8 @@
 
 A Terminal User Interface (TUI) for managing local large language models using [Ollama](https://ollama.com/). Built with Go and the [Bubble Tea](https://github.com/charmbracelet/bubbletea) framework, featuring a clean Gruvbox Dark aesthetic.
 
+<img width="2249" height="1374" alt="image" src="https://github.com/user-attachments/assets/ad80d00c-7778-4f00-902b-c0d7ab92a951" />
+
 ## Features
 
 - **Model Management**: View your installed models, including size, format, quantization, and last modified date.
