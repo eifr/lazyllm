@@ -401,7 +401,6 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "y", "Y", "enter":
 				m.logs = append(m.logs, logMsg{text: "Installing Ollama...", level: "info"})
 
-				// Use ExecProcess so the user can see the install script output and enter sudo password if needed
 				c := exec.Command("sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh")
 				cmd = tea.ExecProcess(c, func(err error) tea.Msg {
 					if err != nil {
@@ -418,16 +417,27 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.state == stateRegistry {
+			if m.registryList.FilterState() == list.Filtering {
+				if msg.String() == "ctrl+c" {
+					return m, tea.Quit
+				}
+				m.registryList, cmd = m.registryList.Update(msg)
+				cmds = append(cmds, cmd)
+				return m, tea.Batch(cmds...)
+			}
+
 			switch msg.String() {
 			case "esc":
+				if m.registryList.FilterState() == list.FilterApplied {
+					m.registryList.ResetFilter()
+					return m, nil
+				}
 				m.state = stateBrowsing
 				return m, nil
 			case "enter":
 				if i, ok := m.registryList.SelectedItem().(registryItem); ok {
 					m.input.SetValue(i.tag)
 					m.state = statePulling
-
-					// Re-trigger the enter logic from statePulling by just pretending the user typed it and pressed enter in the prompt
 					return m, func() tea.Msg { return tea.KeyMsg{Type: tea.KeyEnter} }
 				}
 			}
@@ -437,14 +447,26 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.state == stateOpenWith {
+			if m.appList.FilterState() == list.Filtering {
+				if msg.String() == "ctrl+c" {
+					return m, tea.Quit
+				}
+				m.appList, cmd = m.appList.Update(msg)
+				cmds = append(cmds, cmd)
+				return m, tea.Batch(cmds...)
+			}
+
 			switch msg.String() {
 			case "esc":
+				if m.appList.FilterState() == list.FilterApplied {
+					m.appList.ResetFilter()
+					return m, nil
+				}
 				m.state = stateBrowsing
 				return m, nil
 			case "enter":
 				if i, ok := m.list.SelectedItem().(modelItem); ok {
 					if app, appOk := m.appList.SelectedItem().(appItem); appOk {
-						// Parse the selected app command template
 						cmdStr := strings.ReplaceAll(app.cmd, "{model}", i.model.Name)
 						args := strings.Fields(cmdStr)
 
@@ -541,7 +563,21 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.state == stateBrowsing {
+			if m.list.FilterState() == list.Filtering {
+				if msg.String() == "ctrl+c" {
+					return m, tea.Quit
+				}
+				m.list, cmd = m.list.Update(msg)
+				cmds = append(cmds, cmd)
+				return m, tea.Batch(cmds...)
+			}
+
 			switch msg.String() {
+			case "esc":
+				if m.list.FilterState() == list.FilterApplied {
+					m.list.ResetFilter()
+				}
+				return m, nil
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "d":
@@ -575,10 +611,8 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return registryProgressMsg{status: status, ch: ch}
 						}
 					}
-					// Start polling the channel
 					cmds = append(cmds, waitForProgress(progressChan))
 
-					// Start the actual background scrape
 					cmds = append(cmds, func() tea.Msg {
 						tags, err := ScrapeAll(progressChan)
 						close(progressChan)
@@ -588,7 +622,6 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(cmds...)
 			case "enter":
 				if i, ok := m.list.SelectedItem().(modelItem); ok {
-					// Parse the chat command template
 					cmdStr := strings.ReplaceAll(m.chatCmdTemplate, "{model}", i.model.Name)
 					args := strings.Fields(cmdStr)
 
@@ -611,6 +644,14 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list, cmd = m.list.Update(msg)
 			cmds = append(cmds, cmd)
 		}
+
+	default:
+		// Route internal unhandled messages (like background filter results) to the active lists
+		var cmdList, cmdApp, cmdReg tea.Cmd
+		m.list, cmdList = m.list.Update(msg)
+		m.appList, cmdApp = m.appList.Update(msg)
+		m.registryList, cmdReg = m.registryList.Update(msg)
+		cmds = append(cmds, cmdList, cmdApp, cmdReg)
 	}
 
 	return m, tea.Batch(cmds...)
