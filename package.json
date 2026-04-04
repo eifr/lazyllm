@@ -1,6 +1,6 @@
 {
   "name": "@eifr/lazyllm",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "description": "A Terminal User Interface (TUI) for managing local large language models using Ollama",
   "main": "bin/lazyllm.js",
   "bin": {
