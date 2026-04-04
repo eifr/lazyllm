@@ -27,9 +27,8 @@ archives:
 checksum:
   name_template: 'checksums.txt'
 
-changelog:
-  sort: asc
-  filters:
-    exclude:
-      - '^docs:'
-      - '^test:'
+release:
+  github:
+    owner: eifr
+    name: lazyllm
+  github_release_notes: true
