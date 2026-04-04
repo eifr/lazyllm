@@ -1,5 +1,5 @@
 {
-  "name": "lazyllm",
+  "name": "@eifr/lazyllm",
   "version": "0.1.0",
   "description": "A Terminal User Interface (TUI) for managing local large language models using Ollama",
   "main": "bin/lazyllm.js",
@@ -12,6 +12,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eifr/lazyllm.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "keywords": [
     "llm",
